@@ -127,6 +127,8 @@
           <dd id="model-status">No cargado</dd>
           <dt>Detecciones</dt>
           <dd id="detection-count">0</dd>
+          <dt>Persistencia</dt>
+          <dd id="persistence-status">Sin registros enviados</dd>
         </dl>
       </aside>
     </section>
@@ -150,6 +152,7 @@
     const overlay = document.querySelector('#overlay');
     const modelStatus = document.querySelector('#model-status');
     const detectionCount = document.querySelector('#detection-count');
+    const persistenceStatus = document.querySelector('#persistence-status');
     const MODEL_URL = '/yolo26n.onnx';
     const MODEL_SIZE = 640;
     const CLASS_NAMES = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'];
@@ -158,6 +161,8 @@
     let inferenceActive = false;
     let inferenceBusy = false;
     let lastInference = 0;
+    let lastSaved = 0;
+    let frameNumber = 0;
 
     function setStatus(message, kind = '') {
       status.textContent = message;
@@ -291,6 +296,41 @@
         context.fillText(label, detection.x1 + 6, Math.max(16, detection.y1 - 7));
       }
       detectionCount.textContent = String(detections.length);
+      persistDetections(detections);
+    }
+
+    async function persistDetections(detections) {
+      const now = Date.now();
+      if (!detections.length || now - lastSaved < 1000) return;
+      lastSaved = now;
+      frameNumber += 1;
+      try {
+        await Promise.all(detections.map((detection) => fetch('/api/detections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            source_name: 'browser-camera',
+            frame_number: frameNumber,
+            model_name: 'yolo26n',
+            class_id: detection.classId,
+            class_name: CLASS_NAMES[detection.classId] || `clase ${detection.classId}`,
+            confidence: detection.confidence,
+            bbox: {
+              x1: detection.x1,
+              y1: detection.y1,
+              x2: detection.x2,
+              y2: detection.y2
+            },
+            metadata: { source: 'frontend', saved_at: new Date().toISOString() }
+          })
+        }).then((response) => {
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        })));
+        persistenceStatus.textContent = `${detections.length} guardadas`;
+      } catch (error) {
+        console.error('No se pudo guardar la detección', error);
+        persistenceStatus.textContent = 'Error al guardar';
+      }
     }
 
     async function inferFrame(now) {

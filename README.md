@@ -68,6 +68,9 @@ curl -X POST http://localhost:8001/api/detections \
 	}'
 ```
 
+Cuando las detecciones están activas en el frontend, se envían automáticamente
+a este endpoint como máximo una vez por segundo y se guardan en PostgreSQL.
+
 ## Tabla de detecciones
 
 La tabla `detections` guarda los resultados de `yolo26n`: clase (`class_name`),
