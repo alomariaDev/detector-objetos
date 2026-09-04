@@ -12,28 +12,18 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 
 
 class DetectionCreate(BaseModel):
-    source_name: str | None = None
-    frame_number: int | None = Field(default=None, ge=0)
-    model_name: str = "yolo26n"
-    class_id: int = Field(ge=0)
     class_name: str
     confidence: float = Field(ge=0, le=1)
     bbox: dict[str, float]
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 def row_to_detection(row: tuple[Any, ...]) -> dict[str, Any]:
     return {
         "id": row[0],
-        "source_name": row[1],
-        "frame_number": row[2],
-        "model_name": row[3],
-        "class_id": row[4],
-        "class_name": row[5],
-        "confidence": row[6],
-        "bbox": row[7],
-        "detected_at": row[8].isoformat(),
-        "metadata": row[9],
+        "class_name": row[1],
+        "detected_at": row[2].isoformat(),
+        "confidence": row[3],
+        "bbox": row[4],
     }
 
 
@@ -74,12 +64,10 @@ def health() -> dict[str, str]:
 def create_detection(detection: DetectionCreate) -> dict[str, Any]:
     query = """
         INSERT INTO detections (
-            source_name, frame_number, model_name, class_id, class_name,
-            confidence, bbox, metadata
+            class_name, confidence, bbox
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id, source_name, frame_number, model_name, class_id,
-                  class_name, confidence, bbox, detected_at, metadata
+        VALUES (%s, %s, %s)
+        RETURNING id, class_name, detected_at, confidence, bbox
     """
     try:
         with psycopg.connect(DATABASE_URL) as connection:
@@ -87,14 +75,9 @@ def create_detection(detection: DetectionCreate) -> dict[str, Any]:
                 cursor.execute(
                     query,
                     (
-                        detection.source_name,
-                        detection.frame_number,
-                        detection.model_name,
-                        detection.class_id,
                         detection.class_name,
                         detection.confidence,
                         Jsonb(detection.bbox),
-                        Jsonb(detection.metadata),
                     ),
                 )
                 row = cursor.fetchone()
@@ -109,8 +92,7 @@ def list_detections(
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     query = """
-        SELECT id, source_name, frame_number, model_name, class_id,
-               class_name, confidence, bbox, detected_at, metadata
+        SELECT id, class_name, detected_at, confidence, bbox
         FROM detections
         ORDER BY detected_at DESC, id DESC
         LIMIT %s OFFSET %s

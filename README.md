@@ -38,8 +38,7 @@ docker compose up -d --build frontend
 ```
 
 Desde la página puedes iniciar y detener la cámara del equipo y capturar un
-frame local. El navegador solicitará permiso para usar la cámara; por ahora la
-captura no se envía al backend ni se guarda en PostgreSQL.
+frame local. El navegador solicitará permiso para usar la cámara.
 
 El build incluye el peso oficial `yolo26n.onnx` dentro de la imagen para que
 el navegador lo cargue desde el mismo origen y pueda ejecutar la inferencia sin
@@ -60,8 +59,6 @@ Ejemplo para guardar una detección:
 curl -X POST http://localhost:8001/api/detections \
 	-H 'Content-Type: application/json' \
 	-d '{
-		"source_name": "camara-1",
-		"class_id": 0,
 		"class_name": "person",
 		"confidence": 0.91,
 		"bbox": {"x1": 120.5, "y1": 80.2, "x2": 340.7, "y2": 420.1}
@@ -73,17 +70,16 @@ a este endpoint como máximo una vez por segundo y se guardan en PostgreSQL.
 
 ## Tabla de detecciones
 
-La tabla `detections` guarda los resultados de `yolo26n`: clase (`class_name`),
-confianza (`confidence`) y caja (`bbox`), además del modelo, origen, frame,
-fecha y metadatos.
+La tabla `detections` guarda únicamente la clase (`class_name`), la hora de
+detección (`detected_at`), la confianza (`confidence`) y la caja (`bbox`).
 
 Ejemplo de inserción:
 
 ```sql
 INSERT INTO detections (
-	source_name, class_id, class_name, confidence, bbox
+	class_name, confidence, bbox
 ) VALUES (
-	'imagen.jpg', 0, 'person', 0.91,
+	'person', 0.91,
 	'{"x1": 120.5, "y1": 80.2, "x2": 340.7, "y2": 420.1}'::jsonb
 );
 ```

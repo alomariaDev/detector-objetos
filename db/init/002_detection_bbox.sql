@@ -43,6 +43,9 @@ ALTER TABLE detections
     DROP COLUMN IF EXISTS y2;
 
 ALTER TABLE detections
+    DROP CONSTRAINT IF EXISTS detections_bbox_object_check;
+
+ALTER TABLE detections
     ADD CONSTRAINT detections_bbox_object_check
     CHECK (jsonb_typeof(bbox) = 'object');
 

@@ -162,7 +162,6 @@
     let inferenceBusy = false;
     let lastInference = 0;
     let lastSaved = 0;
-    let frameNumber = 0;
 
     function setStatus(message, kind = '') {
       status.textContent = message;
@@ -303,16 +302,11 @@
       const now = Date.now();
       if (!detections.length || now - lastSaved < 1000) return;
       lastSaved = now;
-      frameNumber += 1;
       try {
         await Promise.all(detections.map((detection) => fetch('/api/detections', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            source_name: 'browser-camera',
-            frame_number: frameNumber,
-            model_name: 'yolo26n',
-            class_id: detection.classId,
             class_name: CLASS_NAMES[detection.classId] || `clase ${detection.classId}`,
             confidence: detection.confidence,
             bbox: {
@@ -320,8 +314,7 @@
               y1: detection.y1,
               x2: detection.x2,
               y2: detection.y2
-            },
-            metadata: { source: 'frontend', saved_at: new Date().toISOString() }
+            }
           })
         }).then((response) => {
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
