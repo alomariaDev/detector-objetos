@@ -62,6 +62,7 @@
     .camera { padding: 12px; }
     .stage { position: relative; overflow: hidden; aspect-ratio: 16 / 10; background: #080b0d; }
     video { display: block; width: 100%; height: 100%; object-fit: cover; }
+    #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
     .placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: var(--muted); text-align: center; }
     .placeholder[hidden] { display: none; }
 
@@ -70,6 +71,8 @@
     button:hover:not(:disabled) { background: var(--accent-strong); }
     button.secondary { border-color: var(--line); background: transparent; color: var(--text); }
     button:disabled { cursor: not-allowed; opacity: 0.45; }
+    .threshold { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--muted); font: 0.75rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .threshold input { width: 72px; border: 1px solid var(--line); padding: 10px 8px; background: #10161a; color: var(--text); font: inherit; }
 
     .details { padding: 22px; }
     .details h2 { margin: 0 0 18px; font-size: 1.35rem; }
@@ -92,19 +95,22 @@
     <header>
       <p class="eyebrow">Detector de objetos / captura</p>
       <h1>Una ventana hacia la cámara.</h1>
-      <p class="intro">Activa la cámara del equipo para preparar el flujo de inferencia. En este primer paso, la imagen permanece en el navegador.</p>
+      <p class="intro">Activa la cámara del equipo y ejecuta YOLO26n en el navegador. Las detecciones se dibujan sobre la imagen en tiempo real.</p>
     </header>
 
     <section class="workspace" aria-label="Captura de cámara">
       <div class="camera">
         <div class="stage">
           <video id="camera" autoplay playsinline muted></video>
+          <canvas id="overlay"></canvas>
           <p id="placeholder" class="placeholder">La cámara está detenida. Pulsa «Iniciar cámara» para solicitar permiso.</p>
         </div>
         <div class="controls">
           <button id="start" type="button">Iniciar cámara</button>
           <button id="stop" class="secondary" type="button" disabled>Detener</button>
           <button id="capture" class="secondary" type="button" disabled>Capturar frame</button>
+          <button id="infer" class="secondary" type="button" disabled>Activar detecciones</button>
+          <label class="threshold" for="confidence">Confianza <input id="confidence" type="number" min="0.05" max="0.95" step="0.05" value="0.35"></label>
         </div>
       </div>
 
@@ -117,6 +123,10 @@
           <dd id="device">Sin seleccionar</dd>
           <dt>Última captura</dt>
           <dd id="capture-time">Ninguna</dd>
+          <dt>Modelo</dt>
+          <dd id="model-status">No cargado</dd>
+          <dt>Detecciones</dt>
+          <dd id="detection-count">0</dd>
         </dl>
       </aside>
     </section>
@@ -124,17 +134,30 @@
     <canvas id="snapshot"></canvas>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.20.1/dist/ort.min.js"></script>
   <script>
     const video = document.querySelector('#camera');
     const placeholder = document.querySelector('#placeholder');
     const startButton = document.querySelector('#start');
     const stopButton = document.querySelector('#stop');
     const captureButton = document.querySelector('#capture');
+    const inferButton = document.querySelector('#infer');
+    const confidenceInput = document.querySelector('#confidence');
     const status = document.querySelector('#status');
     const device = document.querySelector('#device');
     const captureTime = document.querySelector('#capture-time');
     const canvas = document.querySelector('#snapshot');
+    const overlay = document.querySelector('#overlay');
+    const modelStatus = document.querySelector('#model-status');
+    const detectionCount = document.querySelector('#detection-count');
+    const MODEL_URL = '/yolo26n.onnx';
+    const MODEL_SIZE = 640;
+    const CLASS_NAMES = ['person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket', 'bottle', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl', 'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza', 'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'book', 'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'];
     let stream;
+    let session;
+    let inferenceActive = false;
+    let inferenceBusy = false;
+    let lastInference = 0;
 
     function setStatus(message, kind = '') {
       status.textContent = message;
@@ -156,6 +179,7 @@
         startButton.disabled = true;
         stopButton.disabled = false;
         captureButton.disabled = false;
+        inferButton.disabled = false;
         setStatus('Cámara activa', 'ok');
       } catch (error) {
         const message = error.name === 'NotAllowedError'
@@ -173,6 +197,10 @@
       startButton.disabled = false;
       stopButton.disabled = true;
       captureButton.disabled = true;
+      inferButton.disabled = true;
+      inferenceActive = false;
+      inferButton.textContent = 'Activar detecciones';
+      clearOverlay();
       setStatus('Cámara detenida');
       device.textContent = 'Sin seleccionar';
     }
@@ -186,9 +214,125 @@
       setStatus('Frame capturado localmente', 'ok');
     }
 
+    function clearOverlay() {
+      overlay.width = video.videoWidth || 1;
+      overlay.height = video.videoHeight || 1;
+      overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height);
+      detectionCount.textContent = '0';
+    }
+
+    async function loadModel() {
+      if (session) return session;
+      modelStatus.textContent = 'Cargando...';
+      session = await ort.InferenceSession.create(MODEL_URL, {
+        executionProviders: ['wasm'],
+        graphOptimizationLevel: 'all'
+      });
+      modelStatus.textContent = 'YOLO26n listo';
+      return session;
+    }
+
+    function makeInput() {
+      const sourceWidth = video.videoWidth;
+      const sourceHeight = video.videoHeight;
+      const scale = Math.min(MODEL_SIZE / sourceWidth, MODEL_SIZE / sourceHeight);
+      const resizedWidth = Math.round(sourceWidth * scale);
+      const resizedHeight = Math.round(sourceHeight * scale);
+      const padX = (MODEL_SIZE - resizedWidth) / 2;
+      const padY = (MODEL_SIZE - resizedHeight) / 2;
+      const inputCanvas = document.createElement('canvas');
+      inputCanvas.width = MODEL_SIZE;
+      inputCanvas.height = MODEL_SIZE;
+      const inputContext = inputCanvas.getContext('2d', { willReadFrequently: true });
+      inputContext.fillStyle = '#808080';
+      inputContext.fillRect(0, 0, MODEL_SIZE, MODEL_SIZE);
+      inputContext.drawImage(video, padX, padY, resizedWidth, resizedHeight);
+      const pixels = inputContext.getImageData(0, 0, MODEL_SIZE, MODEL_SIZE).data;
+      const tensor = new Float32Array(3 * MODEL_SIZE * MODEL_SIZE);
+      for (let i = 0; i < MODEL_SIZE * MODEL_SIZE; i += 1) {
+        tensor[i] = pixels[i * 4] / 255;
+        tensor[i + MODEL_SIZE * MODEL_SIZE] = pixels[i * 4 + 1] / 255;
+        tensor[i + 2 * MODEL_SIZE * MODEL_SIZE] = pixels[i * 4 + 2] / 255;
+      }
+      return { tensor: new ort.Tensor('float32', tensor, [1, 3, MODEL_SIZE, MODEL_SIZE]), scale, padX, padY };
+    }
+
+    function drawDetections(output, transform) {
+      overlay.width = video.videoWidth;
+      overlay.height = video.videoHeight;
+      const context = overlay.getContext('2d');
+      context.clearRect(0, 0, overlay.width, overlay.height);
+      context.font = '600 14px ui-monospace, monospace';
+      const values = output.data;
+      const detections = [];
+      const rows = output.dims[1] || 300;
+      const stride = output.dims[2] || 6;
+      for (let row = 0; row < rows; row += 1) {
+        const offset = row * stride;
+        const confidence = values[offset + 4];
+        if (confidence < Number(confidenceInput.value)) continue;
+        const classId = Math.round(values[offset + 5]);
+        const x1 = Math.max(0, (values[offset] - transform.padX) / transform.scale);
+        const y1 = Math.max(0, (values[offset + 1] - transform.padY) / transform.scale);
+        const x2 = Math.min(video.videoWidth, (values[offset + 2] - transform.padX) / transform.scale);
+        const y2 = Math.min(video.videoHeight, (values[offset + 3] - transform.padY) / transform.scale);
+        if (x2 <= x1 || y2 <= y1) continue;
+        detections.push({ classId, confidence, x1, y1, x2, y2 });
+      }
+      for (const detection of detections) {
+        const label = `${CLASS_NAMES[detection.classId] || `clase ${detection.classId}`} ${(detection.confidence * 100).toFixed(0)}%`;
+        const labelWidth = context.measureText(label).width + 12;
+        context.strokeStyle = '#f0bd75';
+        context.lineWidth = Math.max(2, overlay.width / 360);
+        context.strokeRect(detection.x1, detection.y1, detection.x2 - detection.x1, detection.y2 - detection.y1);
+        context.fillStyle = '#f0bd75';
+        context.fillRect(detection.x1, Math.max(0, detection.y1 - 23), labelWidth, 23);
+        context.fillStyle = '#17130e';
+        context.fillText(label, detection.x1 + 6, Math.max(16, detection.y1 - 7));
+      }
+      detectionCount.textContent = String(detections.length);
+    }
+
+    async function inferFrame(now) {
+      if (!inferenceActive || !stream) return;
+      requestAnimationFrame(inferFrame);
+      if (inferenceBusy || now - lastInference < 180 || !video.videoWidth) return;
+      inferenceBusy = true;
+      lastInference = now;
+      try {
+        const activeSession = await loadModel();
+        const input = makeInput();
+        const outputMap = await activeSession.run({ [activeSession.inputNames[0]]: input.tensor });
+        drawDetections(outputMap[activeSession.outputNames[0]], input);
+        setStatus('Detecciones activas', 'ok');
+      } catch (error) {
+        console.error(error);
+        inferenceActive = false;
+        inferButton.textContent = 'Activar detecciones';
+        setStatus('Error cargando YOLO26n', 'error');
+        modelStatus.textContent = 'Error de modelo';
+      } finally {
+        inferenceBusy = false;
+      }
+    }
+
+    async function toggleInference() {
+      if (inferenceActive) {
+        inferenceActive = false;
+        inferButton.textContent = 'Activar detecciones';
+        clearOverlay();
+        setStatus('Cámara activa', 'ok');
+        return;
+      }
+      inferenceActive = true;
+      inferButton.textContent = 'Detener detecciones';
+      requestAnimationFrame(inferFrame);
+    }
+
     startButton.addEventListener('click', startCamera);
     stopButton.addEventListener('click', stopCamera);
     captureButton.addEventListener('click', captureFrame);
+    inferButton.addEventListener('click', toggleInference);
   </script>
 </body>
 </html>

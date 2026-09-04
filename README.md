@@ -41,6 +41,10 @@ Desde la página puedes iniciar y detener la cámara del equipo y capturar un
 frame local. El navegador solicitará permiso para usar la cámara; por ahora la
 captura no se envía al backend ni se guarda en PostgreSQL.
 
+El build incluye el peso oficial `yolo26n.onnx` dentro de la imagen para que
+el navegador lo cargue desde el mismo origen y pueda ejecutar la inferencia sin
+problemas de CORS.
+
 ## Tabla de detecciones
 
 La tabla `detections` guarda los resultados de `yolo26n`: clase (`class_name`),
