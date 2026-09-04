@@ -45,6 +45,29 @@ El build incluye el peso oficial `yolo26n.onnx` dentro de la imagen para que
 el navegador lo cargue desde el mismo origen y pueda ejecutar la inferencia sin
 problemas de CORS.
 
+## Backend de detecciones
+
+El backend FastAPI se sirve directamente en `http://localhost:8001` y también
+está disponible desde el frontend bajo `/api`.
+
+- `GET /api/health`: comprueba que el backend puede conectarse a PostgreSQL.
+- `POST /api/detections`: guarda una detección con `class_name`, `confidence` y `bbox`.
+- `GET /api/detections?limit=100&offset=0`: consulta las detecciones guardadas.
+
+Ejemplo para guardar una detección:
+
+```bash
+curl -X POST http://localhost:8001/api/detections \
+	-H 'Content-Type: application/json' \
+	-d '{
+		"source_name": "camara-1",
+		"class_id": 0,
+		"class_name": "person",
+		"confidence": 0.91,
+		"bbox": {"x1": 120.5, "y1": 80.2, "x2": 340.7, "y2": 420.1}
+	}'
+```
+
 ## Tabla de detecciones
 
 La tabla `detections` guarda los resultados de `yolo26n`: clase (`class_name`),

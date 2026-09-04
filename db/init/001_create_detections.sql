@@ -14,5 +14,5 @@ CREATE TABLE IF NOT EXISTS detections (
 CREATE INDEX IF NOT EXISTS idx_detections_detected_at
     ON detections (detected_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_detections_label
-    ON detections (label);
+CREATE INDEX IF NOT EXISTS idx_detections_class_name
+    ON detections (class_name);

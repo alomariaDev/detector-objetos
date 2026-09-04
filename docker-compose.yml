@@ -1,4 +1,17 @@
 services:
+  backend:
+    build:
+      context: ./backend
+    container_name: detector-objetos-backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-detector}:${POSTGRES_PASSWORD:-detector_dev_password}@postgres:5432/${POSTGRES_DB:-detector_objetos}
+    ports:
+      - "${BACKEND_PORT:-8001}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend
@@ -7,8 +20,8 @@ services:
     ports:
       - "${FRONTEND_PORT:-8080}:80"
     depends_on:
-      postgres:
-        condition: service_healthy
+      backend:
+        condition: service_started
 
   postgres:
     image: postgres:16-alpine
