@@ -29,6 +29,18 @@ Valores locales por defecto:
 
 Puedes sobrescribirlos creando un archivo `.env` a partir de `.env.example`.
 
+## Frontend
+
+El frontend se sirve en `http://localhost:8080`:
+
+```bash
+docker compose up -d --build frontend
+```
+
+Desde la página puedes iniciar y detener la cámara del equipo y capturar un
+frame local. El navegador solicitará permiso para usar la cámara; por ahora la
+captura no se envía al backend ni se guarda en PostgreSQL.
+
 ## Tabla de detecciones
 
 La tabla `detections` guarda los resultados de `yolo26n`: clase (`class_name`),

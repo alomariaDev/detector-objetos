@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detector de objetos</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #11161b;
+      --panel: #1b2329;
+      --panel-soft: #222d34;
+      --line: #34434d;
+      --text: #e9f0f2;
+      --muted: #9eb0b7;
+      --accent: #e0a458;
+      --accent-strong: #f0bd75;
+      --danger: #e1786c;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at 15% 10%, #28343a 0, transparent 34%), var(--bg);
+      color: var(--text);
+      font-family: Georgia, 'Times New Roman', serif;
+    }
+
+    main {
+      width: min(1100px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 48px 0;
+    }
+
+    header { margin-bottom: 28px; }
+
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--accent-strong);
+      font: 700 0.78rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 { margin: 0; font-size: clamp(2.4rem, 6vw, 5.2rem); line-height: 0.95; }
+    .intro { max-width: 620px; margin: 18px 0 0; color: var(--muted); font-size: 1.08rem; line-height: 1.55; }
+
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.8fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .camera, .details {
+      border: 1px solid var(--line);
+      background: linear-gradient(145deg, var(--panel-soft), var(--panel));
+    }
+
+    .camera { padding: 12px; }
+    .stage { position: relative; overflow: hidden; aspect-ratio: 16 / 10; background: #080b0d; }
+    video { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: var(--muted); text-align: center; }
+    .placeholder[hidden] { display: none; }
+
+    .controls { display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px; }
+    button { border: 1px solid var(--accent); padding: 11px 15px; background: var(--accent); color: #1a1712; cursor: pointer; font: 700 0.9rem ui-monospace, SFMono-Regular, Menlo, monospace; }
+    button:hover:not(:disabled) { background: var(--accent-strong); }
+    button.secondary { border-color: var(--line); background: transparent; color: var(--text); }
+    button:disabled { cursor: not-allowed; opacity: 0.45; }
+
+    .details { padding: 22px; }
+    .details h2 { margin: 0 0 18px; font-size: 1.35rem; }
+    dl { margin: 0; }
+    dt { margin-top: 16px; color: var(--muted); font: 0.75rem ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase; }
+    dd { margin: 5px 0 0; font-size: 1.05rem; }
+    #status[data-kind="error"] { color: var(--danger); }
+    #status[data-kind="ok"] { color: var(--accent-strong); }
+
+    canvas { display: none; }
+
+    @media (max-width: 760px) {
+      main { padding: 28px 0; }
+      .workspace { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">Detector de objetos / captura</p>
+      <h1>Una ventana hacia la cámara.</h1>
+      <p class="intro">Activa la cámara del equipo para preparar el flujo de inferencia. En este primer paso, la imagen permanece en el navegador.</p>
+    </header>
+
+    <section class="workspace" aria-label="Captura de cámara">
+      <div class="camera">
+        <div class="stage">
+          <video id="camera" autoplay playsinline muted></video>
+          <p id="placeholder" class="placeholder">La cámara está detenida. Pulsa «Iniciar cámara» para solicitar permiso.</p>
+        </div>
+        <div class="controls">
+          <button id="start" type="button">Iniciar cámara</button>
+          <button id="stop" class="secondary" type="button" disabled>Detener</button>
+          <button id="capture" class="secondary" type="button" disabled>Capturar frame</button>
+        </div>
+      </div>
+
+      <aside class="details">
+        <h2>Estado de captura</h2>
+        <dl>
+          <dt>Estado</dt>
+          <dd id="status" data-kind="">Cámara detenida</dd>
+          <dt>Dispositivo</dt>
+          <dd id="device">Sin seleccionar</dd>
+          <dt>Última captura</dt>
+          <dd id="capture-time">Ninguna</dd>
+        </dl>
+      </aside>
+    </section>
+
+    <canvas id="snapshot"></canvas>
+  </main>
+
+  <script>
+    const video = document.querySelector('#camera');
+    const placeholder = document.querySelector('#placeholder');
+    const startButton = document.querySelector('#start');
+    const stopButton = document.querySelector('#stop');
+    const captureButton = document.querySelector('#capture');
+    const status = document.querySelector('#status');
+    const device = document.querySelector('#device');
+    const captureTime = document.querySelector('#capture-time');
+    const canvas = document.querySelector('#snapshot');
+    let stream;
+
+    function setStatus(message, kind = '') {
+      status.textContent = message;
+      status.dataset.kind = kind;
+    }
+
+    async function startCamera() {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        setStatus('El navegador no permite acceder a la cámara', 'error');
+        return;
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        video.srcObject = stream;
+        const track = stream.getVideoTracks()[0];
+        device.textContent = track.label || 'Cámara del equipo';
+        placeholder.hidden = true;
+        startButton.disabled = true;
+        stopButton.disabled = false;
+        captureButton.disabled = false;
+        setStatus('Cámara activa', 'ok');
+      } catch (error) {
+        const message = error.name === 'NotAllowedError'
+          ? 'Permiso de cámara denegado'
+          : 'No se pudo iniciar la cámara';
+        setStatus(message, 'error');
+      }
+    }
+
+    function stopCamera() {
+      stream?.getTracks().forEach((track) => track.stop());
+      stream = undefined;
+      video.srcObject = null;
+      placeholder.hidden = false;
+      startButton.disabled = false;
+      stopButton.disabled = true;
+      captureButton.disabled = true;
+      setStatus('Cámara detenida');
+      device.textContent = 'Sin seleccionar';
+    }
+
+    function captureFrame() {
+      if (!video.videoWidth) return;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      captureTime.textContent = new Date().toLocaleTimeString('es-ES');
+      setStatus('Frame capturado localmente', 'ok');
+    }
+
+    startButton.addEventListener('click', startCamera);
+    stopButton.addEventListener('click', stopCamera);
+    captureButton.addEventListener('click', captureFrame);
+  </script>
+</body>
+</html>
