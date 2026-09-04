@@ -48,6 +48,17 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Detector de objetos API", version="1.0.0", lifespan=lifespan)
 
 
+@app.get("/")
+def root() -> dict[str, Any]:
+    return {
+        "service": "detector-objetos-backend",
+        "status": "ok",
+        "docs": "/docs",
+        "health": "/api/health",
+        "detections": "/api/detections",
+    }
+
+
 @app.get("/api/health")
 def health() -> dict[str, str]:
     try:
