@@ -31,21 +31,23 @@ Puedes sobrescribirlos creando un archivo `.env` a partir de `.env.example`.
 
 ## Tabla de detecciones
 
-La tabla `detections` guarda los resultados de `yolo26n`: clase, etiqueta,
-confianza, coordenadas de la caja, modelo, origen, frame, fecha y metadatos.
+La tabla `detections` guarda los resultados de `yolo26n`: clase (`class_name`),
+confianza (`confidence`) y caja (`bbox`), además del modelo, origen, frame,
+fecha y metadatos.
 
 Ejemplo de inserción:
 
 ```sql
 INSERT INTO detections (
-	source_name, class_id, label, confidence, x1, y1, x2, y2
+	source_name, class_id, class_name, confidence, bbox
 ) VALUES (
-	'imagen.jpg', 0, 'person', 0.91, 120.5, 80.2, 340.7, 420.1
+	'imagen.jpg', 0, 'person', 0.91,
+	'{"x1": 120.5, "y1": 80.2, "x2": 340.7, "y2": 420.1}'::jsonb
 );
 ```
 
-La migración está en `db/init/001_create_detections.sql`. Docker la ejecuta
-automáticamente al crear un volumen PostgreSQL nuevo.
+Las migraciones están en `db/init/`. Docker las ejecuta automáticamente al
+crear un volumen PostgreSQL nuevo.
 
 Para detener los contenedores:
 

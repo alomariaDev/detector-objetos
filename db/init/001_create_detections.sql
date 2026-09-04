@@ -4,12 +4,9 @@ CREATE TABLE IF NOT EXISTS detections (
     frame_number INTEGER,
     model_name TEXT NOT NULL DEFAULT 'yolo26n',
     class_id INTEGER NOT NULL CHECK (class_id >= 0),
-    label TEXT NOT NULL,
+    class_name TEXT NOT NULL,
     confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
-    x1 REAL NOT NULL CHECK (x1 >= 0),
-    y1 REAL NOT NULL CHECK (y1 >= 0),
-    x2 REAL NOT NULL CHECK (x2 >= x1),
-    y2 REAL NOT NULL CHECK (y2 >= y1),
+    bbox JSONB NOT NULL CHECK (jsonb_typeof(bbox) = 'object'),
     detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 );
