@@ -61,8 +61,8 @@
 
     .camera { padding: 12px; }
     .stage { position: relative; overflow: hidden; aspect-ratio: 16 / 10; background: #080b0d; }
-    video { display: block; width: 100%; height: 100%; object-fit: cover; }
-    #overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+    video { position: relative; z-index: 1; display: block; width: 100%; height: 100%; object-fit: cover; }
+    #overlay { position: absolute; z-index: 2; inset: 0; width: 100%; height: 100%; pointer-events: none; }
     .placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: var(--muted); text-align: center; }
     .placeholder[hidden] { display: none; }
 
@@ -82,7 +82,7 @@
     #status[data-kind="error"] { color: var(--danger); }
     #status[data-kind="ok"] { color: var(--accent-strong); }
 
-    canvas { display: none; }
+    #snapshot { display: none; }
 
     @media (max-width: 760px) {
       main { padding: 28px 0; }
